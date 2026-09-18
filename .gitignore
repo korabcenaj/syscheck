@@ -1,0 +1,22 @@
+# Binaries
+bin/
+/syscheck
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+coverage.html
+
+# IDEs & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
