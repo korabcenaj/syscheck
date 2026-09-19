@@ -47,3 +47,20 @@ func (s Status) Severity() int {
 		return 2
 	}
 }
+
+// ExitCode returns the standard Unix/Nagios monitoring process exit code for this status:
+// 0 = OK, 1 = WARNING, 2 = CRITICAL, 3 = UNKNOWN.
+func (s Status) ExitCode() int {
+	switch s {
+	case StatusOK:
+		return 0
+	case StatusWarning:
+		return 1
+	case StatusCritical:
+		return 2
+	case StatusUnknown:
+		return 3
+	default:
+		return 3
+	}
+}

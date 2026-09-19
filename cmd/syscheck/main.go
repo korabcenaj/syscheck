@@ -1,45 +1,58 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"syscheck/internal/check"
+	"syscheck/internal/config"
 )
 
 func main() {
-	if err := run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
+	exitCode := run(os.Args[1:], os.Stdout, os.Stderr)
+	os.Exit(exitCode)
 }
 
-// run orchestrates the health check runner and displays formatted results.
-func run() error {
+// run encapsulates CLI execution, accepting arguments and writers for stdout and stderr.
+// It returns an integer exit code corresponding to the overall system health:
+// 0 = OK, 1 = WARNING, 2 = CRITICAL, 3 = UNKNOWN/ERROR.
+func run(args []string, stdout, stderr io.Writer) int {
+	cfg, err := config.Parse(args, stderr)
+	if err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return check.StatusUnknown.ExitCode()
+	}
+
 	runner := check.NewRunner(
 		&check.LoadChecker{
-			WarnThreshold: 2.0,
-			CritThreshold: 5.0,
+			WarnThreshold: cfg.LoadWarn,
+			CritThreshold: cfg.LoadCrit,
 		},
 		&check.MemoryChecker{
-			WarnPercent: 80.0,
-			CritPercent: 90.0,
+			WarnPercent: cfg.MemWarn,
+			CritPercent: cfg.MemCrit,
 		},
 		&check.DiskChecker{
-			Path:        "/",
-			WarnPercent: 80.0,
-			CritPercent: 90.0,
+			Path:        cfg.DiskPath,
+			WarnPercent: cfg.DiskWarn,
+			CritPercent: cfg.DiskCrit,
 		},
 	)
 
 	results := runner.RunAll()
 
 	for _, res := range results {
-		fmt.Printf("[%-8s] %-14s %s\n", res.Status, res.Name, res.Message)
+		fmt.Fprintf(stdout, "[%-8s] %-14s %s\n", res.Status, res.Name, res.Message)
 	}
 
 	overall := check.OverallStatus(results)
-	fmt.Printf("\nOverall Health: %s\n", overall)
+	fmt.Fprintf(stdout, "\nOverall Health: %s\n", overall)
 
-	return nil
+	return overall.ExitCode()
 }
