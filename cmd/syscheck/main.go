@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"syscheck/internal/disk"
 	"syscheck/internal/load"
 	"syscheck/internal/memory"
 )
@@ -29,6 +30,11 @@ func run() error {
 		return fmt.Errorf("memory check: %w", err)
 	}
 
+	diskUsage, err := disk.Check("/")
+	if err != nil {
+		return fmt.Errorf("disk check (/): %w", err)
+	}
+
 	fmt.Printf("System Load: %.2f (1m), %.2f (5m), %.2f (15m)\n",
 		avg.One, avg.Five, avg.Fifteen)
 
@@ -44,6 +50,19 @@ func run() error {
 			mem.SwapUsedPercent())
 	} else {
 		fmt.Printf("Swap:        none configured\n")
+	}
+
+	if diskUsage.HasInodes() {
+		fmt.Printf("Disk (/):    %s / %s (%.1f%% used) [Inodes: %.1f%% used]\n",
+			formatBytes(diskUsage.UsedBytes),
+			formatBytes(diskUsage.TotalBytes),
+			diskUsage.UsedPercent(),
+			diskUsage.InodesUsedPercent())
+	} else {
+		fmt.Printf("Disk (/):    %s / %s (%.1f%% used) [Inodes: dynamic]\n",
+			formatBytes(diskUsage.UsedBytes),
+			formatBytes(diskUsage.TotalBytes),
+			diskUsage.UsedPercent())
 	}
 
 	return nil
