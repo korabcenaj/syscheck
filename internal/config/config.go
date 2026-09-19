@@ -19,6 +19,7 @@ type Config struct {
 	DiskCrit float64
 	DiskPath string
 	Format   string
+	Targets  []string
 }
 
 // DefaultConfig returns production-safe default thresholds.
@@ -34,6 +35,7 @@ func DefaultConfig() Config {
 		DiskCrit: 90.0,
 		DiskPath: "/",
 		Format:   "text",
+		Targets:  []string{"localhost"},
 	}
 }
 
@@ -59,6 +61,10 @@ func Parse(args []string, output io.Writer) (Config, error) {
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
+	}
+
+	if posArgs := fs.Args(); len(posArgs) > 0 {
+		cfg.Targets = posArgs
 	}
 
 	if err := cfg.Validate(); err != nil {

@@ -9,14 +9,22 @@ import (
 	"time"
 
 	"github.com/korabcenaj/syscheck/internal/check"
+	"github.com/korabcenaj/syscheck/internal/host"
 )
 
-// Report represents the complete evaluated health report of the system.
+// TargetReport represents the evaluated health status and metadata for a single target node.
+type TargetReport struct {
+	Target   string         `json:"target"`
+	HostInfo *host.Info     `json:"host_info,omitempty"`
+	Overall  check.Status   `json:"overall"`
+	Checks   []check.Result `json:"checks"`
+}
+
+// Report represents the complete evaluated multi-target health report.
 type Report struct {
 	Timestamp time.Time      `json:"timestamp"`
-	Hostname  string         `json:"hostname"`
 	Overall   check.Status   `json:"overall"`
-	Checks    []check.Result `json:"checks"`
+	Targets   []TargetReport `json:"targets"`
 }
 
 // Formatter defines the contract for rendering reports to an io.Writer.
@@ -29,18 +37,35 @@ type TextFormatter struct{}
 
 // Format writes the report as a formatted table to w.
 func (f *TextFormatter) Format(w io.Writer, report Report) error {
-	tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
+	for i, target := range report.Targets {
+		if i > 0 {
+			fmt.Fprintln(w)
+		}
 
-	fmt.Fprintln(tw, "STATUS\tCHECK\tMESSAGE")
-	for _, res := range report.Checks {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Status, res.Name, res.Message)
+		header := fmt.Sprintf("=== Target: %s", target.Target)
+		if target.HostInfo != nil {
+			header += fmt.Sprintf(" (%s, uptime: %s)", target.HostInfo.PrettyName, target.HostInfo.FormattedUptime())
+		}
+		header += " ==="
+		fmt.Fprintln(w, header)
+
+		tw := tabwriter.NewWriter(w, 0, 8, 2, ' ', 0)
+		fmt.Fprintln(tw, "STATUS\tCHECK\tMESSAGE")
+		for _, res := range target.Checks {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", res.Status, res.Name, res.Message)
+		}
+		if err := tw.Flush(); err != nil {
+			return fmt.Errorf("flushing tabwriter: %w", err)
+		}
+		fmt.Fprintf(w, "Target Health: %s\n", target.Overall)
 	}
 
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("flushing tabwriter: %w", err)
+	if len(report.Targets) > 1 {
+		fmt.Fprintf(w, "\n>>> Overall Cluster Health: %s <<<\n", report.Overall)
+	} else if len(report.Targets) == 1 {
+		fmt.Fprintf(w, "\nOverall Health: %s\n", report.Overall)
 	}
 
-	fmt.Fprintf(w, "\nOverall Health: %s\n", report.Overall)
 	return nil
 }
 

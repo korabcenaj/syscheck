@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"reflect"
 	"testing"
 
 	"github.com/korabcenaj/syscheck/internal/config"
@@ -18,8 +19,23 @@ func TestParse(t *testing.T) {
 		}
 
 		defaults := config.DefaultConfig()
-		if cfg != defaults {
+		if !reflect.DeepEqual(cfg, defaults) {
 			t.Errorf("got %+v, want %+v", cfg, defaults)
+		}
+	})
+
+	t.Run("extracts positional target arguments", func(t *testing.T) {
+		var buf bytes.Buffer
+		args := []string{"-format", "json", "server1", "server2", "192.168.1.50"}
+
+		cfg, err := config.Parse(args, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expectedTargets := []string{"server1", "server2", "192.168.1.50"}
+		if !reflect.DeepEqual(cfg.Targets, expectedTargets) {
+			t.Errorf("Targets = %v, want %v", cfg.Targets, expectedTargets)
 		}
 	})
 

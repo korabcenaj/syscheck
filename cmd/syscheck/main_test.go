@@ -57,4 +57,26 @@ func TestRun(t *testing.T) {
 			t.Errorf("missing 'overall' key in JSON: %+v", decoded)
 		}
 	})
+
+	t.Run("executes with explicit localhost target", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"localhost"}, &stdout, &stderr)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "Target: localhost") {
+			t.Errorf("stdout missing Target: localhost: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes multiple targets", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"localhost", "127.0.0.1"}, &stdout, &stderr)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "Overall Cluster Health:") {
+			t.Errorf("stdout missing cluster summary: %q", stdout.String())
+		}
+	})
 }
