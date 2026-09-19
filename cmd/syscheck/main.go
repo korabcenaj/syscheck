@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"syscheck/internal/check"
 	"syscheck/internal/config"
+	"syscheck/internal/output"
 )
 
 func main() {
@@ -25,6 +27,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0
 		}
+		fmt.Fprintf(stderr, "Error: %v\n", err)
+		return check.StatusUnknown.ExitCode()
+	}
+
+	formatter, err := output.NewFormatter(cfg.Format)
+	if err != nil {
 		fmt.Fprintf(stderr, "Error: %v\n", err)
 		return check.StatusUnknown.ExitCode()
 	}
@@ -46,13 +54,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	)
 
 	results := runner.RunAll()
+	overall := check.OverallStatus(results)
 
-	for _, res := range results {
-		fmt.Fprintf(stdout, "[%-8s] %-14s %s\n", res.Status, res.Name, res.Message)
+	hostname, _ := os.Hostname()
+	report := output.Report{
+		Timestamp: time.Now().UTC(),
+		Hostname:  hostname,
+		Overall:   overall,
+		Checks:    results,
 	}
 
-	overall := check.OverallStatus(results)
-	fmt.Fprintf(stdout, "\nOverall Health: %s\n", overall)
+	if err := formatter.Format(stdout, report); err != nil {
+		fmt.Fprintf(stderr, "Error formatting report: %v\n", err)
+		return check.StatusUnknown.ExitCode()
+	}
 
 	return overall.ExitCode()
 }

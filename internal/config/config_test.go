@@ -33,6 +33,7 @@ func TestParse(t *testing.T) {
 			"-disk-warn", "60.0",
 			"-disk-crit", "75.0",
 			"-disk-path", "/var/log",
+			"-format", "json",
 		}
 
 		cfg, err := config.Parse(args, &buf)
@@ -51,6 +52,9 @@ func TestParse(t *testing.T) {
 		}
 		if cfg.DiskPath != "/var/log" {
 			t.Errorf("disk path = %q, want \"/var/log\"", cfg.DiskPath)
+		}
+		if cfg.Format != "json" {
+			t.Errorf("format = %q, want \"json\"", cfg.Format)
 		}
 	})
 
@@ -136,6 +140,20 @@ func TestValidate(t *testing.T) {
 				c.DiskPath = ""
 			},
 			wantErr: true,
+		},
+		{
+			name: "unsupported format",
+			mutate: func(c *config.Config) {
+				c.Format = "yaml"
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid json format",
+			mutate: func(c *config.Config) {
+				c.Format = "json"
+			},
+			wantErr: false,
 		},
 	}
 

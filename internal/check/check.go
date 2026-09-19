@@ -2,10 +2,10 @@ package check
 
 // Result contains the evaluated outcome of a single health check.
 type Result struct {
-	Name    string
-	Status  Status
-	Message string
-	Err     error
+	Name    string `json:"name"`
+	Status  Status `json:"status"`
+	Message string `json:"message"`
+	Err     error  `json:"-"`
 }
 
 // Checker is the interface that all health checks must implement.

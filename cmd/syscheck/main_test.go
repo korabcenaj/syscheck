@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -39,6 +40,21 @@ func TestRun(t *testing.T) {
 		}
 		if !strings.Contains(stdout.String(), "Overall Health:") {
 			t.Errorf("stdout missing summary: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes with json output format", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-format", "json"}, &stdout, &stderr)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+		var decoded map[string]any
+		if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+			t.Fatalf("expected valid JSON output, got error: %v\nOutput: %s", err, stdout.String())
+		}
+		if _, ok := decoded["overall"]; !ok {
+			t.Errorf("missing 'overall' key in JSON: %+v", decoded)
 		}
 	})
 }

@@ -1,5 +1,6 @@
-// Package check defines the core health check interfaces, status codes, and execution engine.
 package check
+
+import "strings"
 
 // Status represents the health status of a check.
 type Status int
@@ -63,4 +64,27 @@ func (s Status) ExitCode() int {
 	default:
 		return 3
 	}
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (s Status) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + s.String() + `"`), nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (s *Status) UnmarshalJSON(b []byte) error {
+	str := strings.Trim(string(b), `"`)
+	switch str {
+	case "OK":
+		*s = StatusOK
+	case "WARNING":
+		*s = StatusWarning
+	case "CRITICAL":
+		*s = StatusCritical
+	case "UNKNOWN":
+		*s = StatusUnknown
+	default:
+		*s = StatusUnknown
+	}
+	return nil
 }

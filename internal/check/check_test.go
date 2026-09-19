@@ -29,6 +29,47 @@ func TestStatusString(t *testing.T) {
 	}
 }
 
+func TestStatusExitCode(t *testing.T) {
+	tests := []struct {
+		status check.Status
+		want   int
+	}{
+		{check.StatusOK, 0},
+		{check.StatusWarning, 1},
+		{check.StatusCritical, 2},
+		{check.StatusUnknown, 3},
+		{check.Status(999), 3},
+	}
+
+	for _, tt := range tests {
+		if got := tt.status.ExitCode(); got != tt.want {
+			t.Errorf("Status(%d).ExitCode() = %d, want %d", tt.status, got, tt.want)
+		}
+	}
+}
+
+func TestStatusJSON(t *testing.T) {
+	t.Run("marshals correctly", func(t *testing.T) {
+		b, err := check.StatusOK.MarshalJSON()
+		if err != nil {
+			t.Fatalf("MarshalJSON() err = %v", err)
+		}
+		if string(b) != `"OK"` {
+			t.Errorf("MarshalJSON() = %s, want %s", string(b), `"OK"`)
+		}
+	})
+
+	t.Run("unmarshals correctly", func(t *testing.T) {
+		var s check.Status
+		if err := s.UnmarshalJSON([]byte(`"CRITICAL"`)); err != nil {
+			t.Fatalf("UnmarshalJSON() err = %v", err)
+		}
+		if s != check.StatusCritical {
+			t.Errorf("UnmarshalJSON() = %v, want CRITICAL", s)
+		}
+	})
+}
+
 func TestOverallStatus(t *testing.T) {
 	tests := []struct {
 		name    string

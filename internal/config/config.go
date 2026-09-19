@@ -18,6 +18,7 @@ type Config struct {
 	DiskWarn float64
 	DiskCrit float64
 	DiskPath string
+	Format   string
 }
 
 // DefaultConfig returns production-safe default thresholds.
@@ -32,6 +33,7 @@ func DefaultConfig() Config {
 		DiskWarn: 80.0,
 		DiskCrit: 90.0,
 		DiskPath: "/",
+		Format:   "text",
 	}
 }
 
@@ -53,6 +55,7 @@ func Parse(args []string, output io.Writer) (Config, error) {
 	fs.Float64Var(&cfg.DiskCrit, "disk-crit", cfg.DiskCrit, "Disk percentage critical threshold (0-100)")
 
 	fs.StringVar(&cfg.DiskPath, "disk-path", cfg.DiskPath, "Filesystem path to monitor for disk space and inodes")
+	fs.StringVar(&cfg.Format, "format", cfg.Format, "Output format: 'text' (default) or 'json'")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -106,6 +109,11 @@ func (c Config) Validate() error {
 	// Disk path validation
 	if c.DiskPath == "" {
 		return fmt.Errorf("disk path cannot be empty")
+	}
+
+	// Format validation
+	if c.Format != "text" && c.Format != "json" {
+		return fmt.Errorf("unsupported output format %q: choose 'text' or 'json'", c.Format)
 	}
 
 	return nil
