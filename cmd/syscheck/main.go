@@ -8,9 +8,9 @@ import (
 	"os"
 	"time"
 
-	"syscheck/internal/check"
-	"syscheck/internal/config"
-	"syscheck/internal/output"
+	"github.com/korabcenaj/syscheck/internal/check"
+	"github.com/korabcenaj/syscheck/internal/config"
+	"github.com/korabcenaj/syscheck/internal/output"
 )
 
 func main() {

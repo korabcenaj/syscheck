@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"syscheck/internal/check"
+	"github.com/korabcenaj/syscheck/internal/check"
 )
 
 // Report represents the complete evaluated health report of the system.

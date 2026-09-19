@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"syscheck/internal/check"
-	"syscheck/internal/output"
+	"github.com/korabcenaj/syscheck/internal/check"
+	"github.com/korabcenaj/syscheck/internal/output"
 )
 
 func sampleReport() output.Report {

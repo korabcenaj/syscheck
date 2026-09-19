@@ -4,10 +4,10 @@ import (
 	"errors"
 	"testing"
 
-	"syscheck/internal/check"
-	"syscheck/internal/disk"
-	"syscheck/internal/load"
-	"syscheck/internal/memory"
+	"github.com/korabcenaj/syscheck/internal/check"
+	"github.com/korabcenaj/syscheck/internal/disk"
+	"github.com/korabcenaj/syscheck/internal/load"
+	"github.com/korabcenaj/syscheck/internal/memory"
 )
 
 func TestStatusString(t *testing.T) {

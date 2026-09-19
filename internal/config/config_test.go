@@ -6,7 +6,7 @@ import (
 	"flag"
 	"testing"
 
-	"syscheck/internal/config"
+	"github.com/korabcenaj/syscheck/internal/config"
 )
 
 func TestParse(t *testing.T) {

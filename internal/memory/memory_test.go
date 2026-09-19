@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"syscheck/internal/memory"
+	"github.com/korabcenaj/syscheck/internal/memory"
 )
 
 const sampleMeminfoModern = `

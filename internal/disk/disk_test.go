@@ -5,7 +5,7 @@ import (
 	"syscall"
 	"testing"
 
-	"syscheck/internal/disk"
+	"github.com/korabcenaj/syscheck/internal/disk"
 )
 
 func TestFromStatfs(t *testing.T) {

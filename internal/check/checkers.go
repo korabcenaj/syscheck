@@ -3,9 +3,9 @@ package check
 import (
 	"fmt"
 
-	"syscheck/internal/disk"
-	"syscheck/internal/load"
-	"syscheck/internal/memory"
+	"github.com/korabcenaj/syscheck/internal/disk"
+	"github.com/korabcenaj/syscheck/internal/load"
+	"github.com/korabcenaj/syscheck/internal/memory"
 )
 
 // LoadChecker evaluates system load averages against thresholds.

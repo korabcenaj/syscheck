@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"syscheck/internal/load"
+	"github.com/korabcenaj/syscheck/internal/load"
 )
 
 func TestParse(t *testing.T) {
