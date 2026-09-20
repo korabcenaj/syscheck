@@ -73,6 +73,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 					ServiceName: svcName,
 				})
 			}
+			for _, tcpTarget := range cfg.TCPTargets {
+				runner.Add(netcheck.NewTCPChecker(tcpTarget, 2*time.Second))
+			}
+			for _, httpTarget := range cfg.HTTPTargets {
+				runner.Add(netcheck.NewHTTPChecker(httpTarget, 3*time.Second))
+			}
 
 			results := runner.RunAll()
 			targetOverall := check.OverallStatus(results)

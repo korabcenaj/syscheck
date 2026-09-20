@@ -111,6 +111,28 @@ func TestParse(t *testing.T) {
 			t.Errorf("Services = %v, want %v", cfg.Services, expectedServices)
 		}
 	})
+
+	t.Run("parses tcp and http flags with whitespace trimming", func(t *testing.T) {
+		var buf bytes.Buffer
+		args := []string{
+			"-tcp", "127.0.0.1:5432, localhost:6379 ",
+			"-http", "http://localhost:8080/health, https://example.com/api ",
+		}
+		cfg, err := config.Parse(args, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expectedTCP := []string{"127.0.0.1:5432", "localhost:6379"}
+		if !reflect.DeepEqual(cfg.TCPTargets, expectedTCP) {
+			t.Errorf("TCPTargets = %v, want %v", cfg.TCPTargets, expectedTCP)
+		}
+
+		expectedHTTP := []string{"http://localhost:8080/health", "https://example.com/api"}
+		if !reflect.DeepEqual(cfg.HTTPTargets, expectedHTTP) {
+			t.Errorf("HTTPTargets = %v, want %v", cfg.HTTPTargets, expectedHTTP)
+		}
+	})
 }
 
 func TestValidate(t *testing.T) {
@@ -187,6 +209,41 @@ func TestValidate(t *testing.T) {
 			name: "valid json format",
 			mutate: func(c *config.Config) {
 				c.Format = "json"
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid tcp target missing port",
+			mutate: func(c *config.Config) {
+				c.TCPTargets = []string{"localhost"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid tcp target",
+			mutate: func(c *config.Config) {
+				c.TCPTargets = []string{"localhost:8080", "192.168.1.1:22"}
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid http target missing scheme",
+			mutate: func(c *config.Config) {
+				c.HTTPTargets = []string{"localhost:8080/health"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid http target unsupported scheme",
+			mutate: func(c *config.Config) {
+				c.HTTPTargets = []string{"ftp://example.com/file"}
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid http targets",
+			mutate: func(c *config.Config) {
+				c.HTTPTargets = []string{"http://localhost:8080/health", "https://example.com"}
 			},
 			wantErr: false,
 		},

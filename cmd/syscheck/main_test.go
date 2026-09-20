@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -102,5 +105,50 @@ func TestRun(t *testing.T) {
 			t.Errorf("stdout missing Process (systemd) check row: %q", stdout.String())
 		}
 		_ = code
+	})
+
+	t.Run("executes with tcp check against live listener", func(t *testing.T) {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen: %v", err)
+		}
+		defer ln.Close()
+
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-tcp", ln.Addr().String()}, &stdout, &stderr)
+		if code != 0 && code != 1 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "TCP ("+ln.Addr().String()+")") {
+			t.Errorf("stdout missing TCP check: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes with http check against test server", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer ts.Close()
+
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-http", ts.URL}, &stdout, &stderr)
+		if code != 0 && code != 1 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+		if !strings.Contains(stdout.String(), "HTTP ("+ts.URL+")") {
+			t.Errorf("stdout missing HTTP check: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes with tcp check reporting critical for closed port", func(t *testing.T) {
+		// Use a local port that is unlikely to be listening
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-tcp", "127.0.0.1:59999"}, &stdout, &stderr)
+		if code != 2 {
+			t.Errorf("exit code = %d, want 2 (Critical) for closed port. Stdout: %s", code, stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "CRITICAL") {
+			t.Errorf("stdout missing CRITICAL status: %q", stdout.String())
+		}
 	})
 }

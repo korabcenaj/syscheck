@@ -5,6 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/url"
 	"strings"
 )
 
@@ -18,11 +20,13 @@ type Config struct {
 
 	DiskWarn float64
 	DiskCrit float64
-	DiskPath string
-	Format   string
-	Targets  []string
-	Procs    []string
-	Services []string
+	DiskPath    string
+	Format      string
+	Targets     []string
+	Procs       []string
+	Services    []string
+	TCPTargets  []string
+	HTTPTargets []string
 }
 
 // DefaultConfig returns production-safe default thresholds.
@@ -62,9 +66,11 @@ func Parse(args []string, output io.Writer) (Config, error) {
 	fs.StringVar(&cfg.DiskPath, "disk-path", cfg.DiskPath, "Filesystem path to monitor for disk space and inodes")
 	fs.StringVar(&cfg.Format, "format", cfg.Format, "Output format: 'text' (default) or 'json'")
 
-	var procsFlag, servicesFlag string
+	var procsFlag, servicesFlag, tcpFlag, httpFlag string
 	fs.StringVar(&procsFlag, "procs", "", "Comma-separated list of process names to monitor (e.g. 'sshd,cron')")
 	fs.StringVar(&servicesFlag, "services", "", "Comma-separated list of system services to monitor (e.g. 'sshd,docker')")
+	fs.StringVar(&tcpFlag, "tcp", "", "Comma-separated list of TCP targets to check in host:port format (e.g. '127.0.0.1:5432,localhost:80')")
+	fs.StringVar(&httpFlag, "http", "", "Comma-separated list of HTTP/HTTPS URLs to check (e.g. 'http://localhost:8080/health,https://example.com')")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -84,6 +90,24 @@ func Parse(args []string, output io.Writer) (Config, error) {
 			trimmed := strings.TrimSpace(s)
 			if trimmed != "" {
 				cfg.Services = append(cfg.Services, trimmed)
+			}
+		}
+	}
+
+	if tcpFlag != "" {
+		for _, t := range strings.Split(tcpFlag, ",") {
+			trimmed := strings.TrimSpace(t)
+			if trimmed != "" {
+				cfg.TCPTargets = append(cfg.TCPTargets, trimmed)
+			}
+		}
+	}
+
+	if httpFlag != "" {
+		for _, u := range strings.Split(httpFlag, ",") {
+			trimmed := strings.TrimSpace(u)
+			if trimmed != "" {
+				cfg.HTTPTargets = append(cfg.HTTPTargets, trimmed)
 			}
 		}
 	}
@@ -145,6 +169,25 @@ func (c Config) Validate() error {
 	// Format validation
 	if c.Format != "text" && c.Format != "json" {
 		return fmt.Errorf("unsupported output format %q: choose 'text' or 'json'", c.Format)
+	}
+
+	// TCP targets validation
+	for _, target := range c.TCPTargets {
+		if _, _, err := net.SplitHostPort(target); err != nil {
+			return fmt.Errorf("invalid tcp target %q: expected host:port format (%w)", target, err)
+		}
+	}
+
+	// HTTP targets validation
+	for _, target := range c.HTTPTargets {
+		parsed, err := url.Parse(target)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("invalid http target %q: valid scheme and host required", target)
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if scheme != "http" && scheme != "https" {
+			return fmt.Errorf("invalid http target %q: scheme must be http or https (got %q)", target, parsed.Scheme)
+		}
 	}
 
 	return nil
