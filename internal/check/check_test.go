@@ -8,6 +8,7 @@ import (
 	"github.com/korabcenaj/syscheck/internal/disk"
 	"github.com/korabcenaj/syscheck/internal/load"
 	"github.com/korabcenaj/syscheck/internal/memory"
+	"github.com/korabcenaj/syscheck/internal/process"
 )
 
 func TestStatusString(t *testing.T) {
@@ -343,3 +344,151 @@ func TestRunner(t *testing.T) {
 		t.Errorf("results[1] = %+v", results[1])
 	}
 }
+
+func TestProcessChecker(t *testing.T) {
+	t.Run("returns OK when process is running", func(t *testing.T) {
+		c := &check.ProcessChecker{
+			ProcessName: "sshd",
+			FindFunc: func(name string, procPath string) ([]process.Process, error) {
+				return []process.Process{
+					{PID: 1234, Name: "sshd", Cmdline: "/usr/sbin/sshd -D"},
+				}, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusOK {
+			t.Errorf("Status = %v, want OK", res.Status)
+		}
+		if res.Name != "Process (sshd)" {
+			t.Errorf("Name = %q, want 'Process (sshd)'", res.Name)
+		}
+	})
+
+	t.Run("returns Critical when process is not running", func(t *testing.T) {
+		c := &check.ProcessChecker{
+			ProcessName: "nginx",
+			FindFunc: func(name string, procPath string) ([]process.Process, error) {
+				return nil, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusCritical {
+			t.Errorf("Status = %v, want Critical", res.Status)
+		}
+	})
+
+	t.Run("returns Warning when process count is below MinCount", func(t *testing.T) {
+		c := &check.ProcessChecker{
+			ProcessName: "worker",
+			MinCount:    3,
+			FindFunc: func(name string, procPath string) ([]process.Process, error) {
+				return []process.Process{
+					{PID: 101, Name: "worker"},
+					{PID: 102, Name: "worker"},
+				}, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusWarning {
+			t.Errorf("Status = %v, want Warning", res.Status)
+		}
+	})
+
+	t.Run("returns Unknown when process scanning fails", func(t *testing.T) {
+		c := &check.ProcessChecker{
+			ProcessName: "cron",
+			FindFunc: func(name string, procPath string) ([]process.Process, error) {
+				return nil, errors.New("permission denied")
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusUnknown {
+			t.Errorf("Status = %v, want Unknown", res.Status)
+		}
+		if res.Err == nil {
+			t.Errorf("expected non-nil Err")
+		}
+	})
+}
+
+func TestServiceChecker(t *testing.T) {
+	t.Run("returns OK when service is active", func(t *testing.T) {
+		c := &check.ServiceChecker{
+			ServiceName: "sshd",
+			QueryFunc: func(name string) (process.ServiceState, error) {
+				return process.ServiceState{
+					Name:   name,
+					Active: true,
+					State:  "active",
+				}, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusOK {
+			t.Errorf("Status = %v, want OK", res.Status)
+		}
+		if res.Name != "Service (sshd)" {
+			t.Errorf("Name = %q, want 'Service (sshd)'", res.Name)
+		}
+	})
+
+	t.Run("returns Critical when service is in failed state", func(t *testing.T) {
+		c := &check.ServiceChecker{
+			ServiceName: "nginx",
+			QueryFunc: func(name string) (process.ServiceState, error) {
+				return process.ServiceState{
+					Name:   name,
+					Active: false,
+					State:  "failed",
+				}, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusCritical {
+			t.Errorf("Status = %v, want Critical", res.Status)
+		}
+	})
+
+	t.Run("returns Critical when service is inactive", func(t *testing.T) {
+		c := &check.ServiceChecker{
+			ServiceName: "docker",
+			QueryFunc: func(name string) (process.ServiceState, error) {
+				return process.ServiceState{
+					Name:   name,
+					Active: false,
+					State:  "inactive",
+				}, nil
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusCritical {
+			t.Errorf("Status = %v, want Critical", res.Status)
+		}
+	})
+
+	t.Run("returns Unknown when service query encounters unknown system error", func(t *testing.T) {
+		c := &check.ServiceChecker{
+			ServiceName: "db",
+			QueryFunc: func(name string) (process.ServiceState, error) {
+				return process.ServiceState{
+					Name:   name,
+					Active: false,
+					State:  "unknown",
+				}, errors.New("systemctl not found")
+			},
+		}
+
+		res := c.Check()
+		if res.Status != check.StatusUnknown {
+			t.Errorf("Status = %v, want Unknown", res.Status)
+		}
+	})
+}
+

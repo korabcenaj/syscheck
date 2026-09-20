@@ -92,6 +92,25 @@ func TestParse(t *testing.T) {
 			t.Fatal("expected error for unknown flag, got nil")
 		}
 	})
+
+	t.Run("parses procs and services flags with whitespace trimming", func(t *testing.T) {
+		var buf bytes.Buffer
+		args := []string{"-procs", "sshd, cron, nginx ", "-services", "docker, systemd-resolved"}
+		cfg, err := config.Parse(args, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expectedProcs := []string{"sshd", "cron", "nginx"}
+		if !reflect.DeepEqual(cfg.Procs, expectedProcs) {
+			t.Errorf("Procs = %v, want %v", cfg.Procs, expectedProcs)
+		}
+
+		expectedServices := []string{"docker", "systemd-resolved"}
+		if !reflect.DeepEqual(cfg.Services, expectedServices) {
+			t.Errorf("Services = %v, want %v", cfg.Services, expectedServices)
+		}
+	})
 }
 
 func TestValidate(t *testing.T) {

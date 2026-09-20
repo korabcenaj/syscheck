@@ -63,6 +63,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 				},
 			)
 
+			for _, procName := range cfg.Procs {
+				runner.Add(&check.ProcessChecker{
+					ProcessName: procName,
+				})
+			}
+			for _, svcName := range cfg.Services {
+				runner.Add(&check.ServiceChecker{
+					ServiceName: svcName,
+				})
+			}
+
 			results := runner.RunAll()
 			targetOverall := check.OverallStatus(results)
 			allResults = append(allResults, results...)

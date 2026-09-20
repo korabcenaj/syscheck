@@ -2,10 +2,13 @@ package check
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/korabcenaj/syscheck/internal/disk"
 	"github.com/korabcenaj/syscheck/internal/load"
 	"github.com/korabcenaj/syscheck/internal/memory"
+	"github.com/korabcenaj/syscheck/internal/process"
 )
 
 // LoadChecker evaluates system load averages against thresholds.
@@ -233,3 +236,130 @@ func FormatBytes(b uint64) string {
 		return fmt.Sprintf("%d B", b)
 	}
 }
+
+// ProcessChecker verifies that a required process is currently running.
+type ProcessChecker struct {
+	ProcessName string
+	MinCount    int
+	ProcPath    string
+
+	// FindFunc allows overriding process search for testing.
+	FindFunc func(name string, procPath string) ([]process.Process, error)
+}
+
+// Name returns the descriptive name of the check.
+func (c *ProcessChecker) Name() string {
+	return fmt.Sprintf("Process (%s)", c.ProcessName)
+}
+
+// Check evaluates whether the process is running and meets the minimum count requirement.
+func (c *ProcessChecker) Check() Result {
+	min := c.MinCount
+	if min <= 0 {
+		min = 1
+	}
+
+	findFn := c.FindFunc
+	if findFn == nil {
+		findFn = process.FindByName
+	}
+
+	procs, err := findFn(c.ProcessName, c.ProcPath)
+	if err != nil {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusUnknown,
+			Message: fmt.Sprintf("failed to scan processes: %v", err),
+			Err:     err,
+		}
+	}
+
+	count := len(procs)
+	if count == 0 {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusCritical,
+			Message: fmt.Sprintf("process %q is not running (expected at least %d)", c.ProcessName, min),
+		}
+	}
+
+	if count < min {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("process %q has %d instance(s) running (expected at least %d)", c.ProcessName, count, min),
+		}
+	}
+
+	pidStrs := make([]string, 0, count)
+	for _, p := range procs {
+		pidStrs = append(pidStrs, strconv.Itoa(p.PID))
+		if len(pidStrs) >= 3 {
+			break
+		}
+	}
+	pidDisplay := strings.Join(pidStrs, ", ")
+	if count > 3 {
+		pidDisplay += fmt.Sprintf(", +%d more", count-3)
+	}
+
+	return Result{
+		Name:    c.Name(),
+		Status:  StatusOK,
+		Message: fmt.Sprintf("process %q is running (%d instance(s), PID: %s)", c.ProcessName, count, pidDisplay),
+	}
+}
+
+// ServiceChecker verifies that a system service is currently active.
+type ServiceChecker struct {
+	ServiceName string
+
+	// QueryFunc allows overriding service state queries for testing.
+	QueryFunc process.ServiceQueryFunc
+}
+
+// Name returns the descriptive name of the check.
+func (c *ServiceChecker) Name() string {
+	return fmt.Sprintf("Service (%s)", c.ServiceName)
+}
+
+// Check evaluates whether the service is in an active state.
+func (c *ServiceChecker) Check() Result {
+	queryFn := c.QueryFunc
+	if queryFn == nil {
+		queryFn = process.QueryService
+	}
+
+	state, err := queryFn(c.ServiceName)
+	if err != nil && state.State == "unknown" {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusUnknown,
+			Message: fmt.Sprintf("failed to query service %q: %v", c.ServiceName, err),
+			Err:     err,
+		}
+	}
+
+	if state.Active {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusOK,
+			Message: fmt.Sprintf("service %q is active (state: %s)", c.ServiceName, state.State),
+		}
+	}
+
+	if state.State == "failed" {
+		return Result{
+			Name:    c.Name(),
+			Status:  StatusCritical,
+			Message: fmt.Sprintf("service %q is in failed state", c.ServiceName),
+		}
+	}
+
+	return Result{
+		Name:    c.Name(),
+		Status:  StatusCritical,
+		Message: fmt.Sprintf("service %q is not active (state: %s)", c.ServiceName, state.State),
+	}
+}
+

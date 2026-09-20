@@ -79,4 +79,28 @@ func TestRun(t *testing.T) {
 			t.Errorf("stdout missing cluster summary: %q", stdout.String())
 		}
 	})
+
+	t.Run("executes with procs check reporting critical on missing process", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-procs", "nonexistent-daemon-99999"}, &stdout, &stderr)
+		if code != 2 {
+			t.Errorf("exit code = %d, want 2 (Critical) for missing process. Stdout: %s", code, stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "Process (nonexistent-daemon-99999)") {
+			t.Errorf("stdout missing Process check row: %q", stdout.String())
+		}
+		if !strings.Contains(stdout.String(), "CRITICAL") {
+			t.Errorf("stdout missing CRITICAL status: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes with procs check on systemd/init", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-procs", "systemd"}, &stdout, &stderr)
+		// systemd is PID 1 on this system, so the check should be present in output
+		if !strings.Contains(stdout.String(), "Process (systemd)") {
+			t.Errorf("stdout missing Process (systemd) check row: %q", stdout.String())
+		}
+		_ = code
+	})
 }

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Config holds runtime configuration options and threshold limits.
@@ -20,6 +21,8 @@ type Config struct {
 	DiskPath string
 	Format   string
 	Targets  []string
+	Procs    []string
+	Services []string
 }
 
 // DefaultConfig returns production-safe default thresholds.
@@ -59,8 +62,30 @@ func Parse(args []string, output io.Writer) (Config, error) {
 	fs.StringVar(&cfg.DiskPath, "disk-path", cfg.DiskPath, "Filesystem path to monitor for disk space and inodes")
 	fs.StringVar(&cfg.Format, "format", cfg.Format, "Output format: 'text' (default) or 'json'")
 
+	var procsFlag, servicesFlag string
+	fs.StringVar(&procsFlag, "procs", "", "Comma-separated list of process names to monitor (e.g. 'sshd,cron')")
+	fs.StringVar(&servicesFlag, "services", "", "Comma-separated list of system services to monitor (e.g. 'sshd,docker')")
+
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
+	}
+
+	if procsFlag != "" {
+		for _, p := range strings.Split(procsFlag, ",") {
+			trimmed := strings.TrimSpace(p)
+			if trimmed != "" {
+				cfg.Procs = append(cfg.Procs, trimmed)
+			}
+		}
+	}
+
+	if servicesFlag != "" {
+		for _, s := range strings.Split(servicesFlag, ",") {
+			trimmed := strings.TrimSpace(s)
+			if trimmed != "" {
+				cfg.Services = append(cfg.Services, trimmed)
+			}
+		}
 	}
 
 	if posArgs := fs.Args(); len(posArgs) > 0 {
