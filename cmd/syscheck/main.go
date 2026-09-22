@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/korabcenaj/syscheck/internal/check"
@@ -40,76 +41,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return check.StatusUnknown.ExitCode()
 	}
 
-	targetReports := make([]output.TargetReport, 0, len(cfg.Targets))
+	targetReports := make([]output.TargetReport, len(cfg.Targets))
+	var wg sync.WaitGroup
+
+	for i, target := range cfg.Targets {
+		wg.Add(1)
+		go func(idx int, tgt string) {
+			defer wg.Done()
+			targetReports[idx] = inspectTarget(tgt, cfg)
+		}(i, target)
+	}
+
+	wg.Wait()
+
 	allResults := make([]check.Result, 0)
-
-	for _, target := range cfg.Targets {
-		if isLocalTarget(target) {
-			hostInfo, _ := host.Read()
-
-			runner := check.NewRunner(
-				&check.LoadChecker{
-					WarnThreshold: cfg.LoadWarn,
-					CritThreshold: cfg.LoadCrit,
-				},
-				&check.MemoryChecker{
-					WarnPercent: cfg.MemWarn,
-					CritPercent: cfg.MemCrit,
-				},
-				&check.DiskChecker{
-					Path:        cfg.DiskPath,
-					WarnPercent: cfg.DiskWarn,
-					CritPercent: cfg.DiskCrit,
-				},
-			)
-
-			for _, procName := range cfg.Procs {
-				runner.Add(&check.ProcessChecker{
-					ProcessName: procName,
-				})
-			}
-			for _, svcName := range cfg.Services {
-				runner.Add(&check.ServiceChecker{
-					ServiceName: svcName,
-				})
-			}
-			for _, tcpTarget := range cfg.TCPTargets {
-				runner.Add(netcheck.NewTCPChecker(tcpTarget, 2*time.Second))
-			}
-			for _, httpTarget := range cfg.HTTPTargets {
-				runner.Add(netcheck.NewHTTPChecker(httpTarget, 3*time.Second))
-			}
-
-			results := runner.RunAll()
-			targetOverall := check.OverallStatus(results)
-			allResults = append(allResults, results...)
-
-			targetReports = append(targetReports, output.TargetReport{
-				Target:   target,
-				HostInfo: &hostInfo,
-				Overall:  targetOverall,
-				Checks:   results,
-			})
-		} else {
-			// Remote target: probe network reachability on SSH port 22
-			runner := check.NewRunner(
-				&netcheck.ReachabilityChecker{
-					Target:  target,
-					Port:    22,
-					Timeout: 2 * time.Second,
-				},
-			)
-
-			results := runner.RunAll()
-			targetOverall := check.OverallStatus(results)
-			allResults = append(allResults, results...)
-
-			targetReports = append(targetReports, output.TargetReport{
-				Target:  target,
-				Overall: targetOverall,
-				Checks:  results,
-			})
-		}
+	for _, tr := range targetReports {
+		allResults = append(allResults, tr.Checks...)
 	}
 
 	overall := check.OverallStatus(allResults)
@@ -141,4 +88,72 @@ func isLocalTarget(target string) bool {
 	}
 
 	return false
+}
+
+// inspectTarget executes the relevant checks for a given target node.
+func inspectTarget(target string, cfg config.Config) output.TargetReport {
+	if isLocalTarget(target) {
+		hostInfo, _ := host.Read()
+
+		runner := check.NewRunner(
+			&check.LoadChecker{
+				WarnThreshold: cfg.LoadWarn,
+				CritThreshold: cfg.LoadCrit,
+			},
+			&check.MemoryChecker{
+				WarnPercent: cfg.MemWarn,
+				CritPercent: cfg.MemCrit,
+			},
+			&check.DiskChecker{
+				Path:        cfg.DiskPath,
+				WarnPercent: cfg.DiskWarn,
+				CritPercent: cfg.DiskCrit,
+			},
+		)
+
+		for _, procName := range cfg.Procs {
+			runner.Add(&check.ProcessChecker{
+				ProcessName: procName,
+			})
+		}
+		for _, svcName := range cfg.Services {
+			runner.Add(&check.ServiceChecker{
+				ServiceName: svcName,
+			})
+		}
+		for _, tcpTarget := range cfg.TCPTargets {
+			runner.Add(netcheck.NewTCPChecker(tcpTarget, 2*time.Second))
+		}
+		for _, httpTarget := range cfg.HTTPTargets {
+			runner.Add(netcheck.NewHTTPChecker(httpTarget, 3*time.Second))
+		}
+
+		results := runner.RunAll()
+		targetOverall := check.OverallStatus(results)
+
+		return output.TargetReport{
+			Target:   target,
+			HostInfo: &hostInfo,
+			Overall:  targetOverall,
+			Checks:   results,
+		}
+	}
+
+	// Remote target: probe network reachability on SSH port 22
+	runner := check.NewRunner(
+		&netcheck.ReachabilityChecker{
+			Target:  target,
+			Port:    22,
+			Timeout: 2 * time.Second,
+		},
+	)
+
+	results := runner.RunAll()
+	targetOverall := check.OverallStatus(results)
+
+	return output.TargetReport{
+		Target:  target,
+		Overall: targetOverall,
+		Checks:  results,
+	}
 }
