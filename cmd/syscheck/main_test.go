@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -149,6 +151,41 @@ func TestRun(t *testing.T) {
 		}
 		if !strings.Contains(stdout.String(), "CRITICAL") {
 			t.Errorf("stdout missing CRITICAL status: %q", stdout.String())
+		}
+	})
+
+	t.Run("executes with valid -config file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "test_config.json")
+		content := `{
+			"load_warn": 10.0,
+			"load_crit": 20.0,
+			"format": "json"
+		}`
+		if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-config", cfgPath}, &stdout, &stderr)
+		if code != 0 && code != 1 && code != 2 {
+			t.Errorf("unexpected exit code: %d, stderr: %s", code, stderr.String())
+		}
+
+		var decoded map[string]any
+		if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
+			t.Fatalf("expected valid JSON output from config file setting, got err: %v\nOutput: %s", err, stdout.String())
+		}
+	})
+
+	t.Run("returns exit code 3 on missing -config file", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"-config", "/nonexistent/config/file.json"}, &stdout, &stderr)
+		if code != 3 {
+			t.Errorf("exit code = %d, want 3 (Unknown) on missing config file", code)
+		}
+		if !strings.Contains(stderr.String(), "Error:") {
+			t.Errorf("stderr missing Error message: %q", stderr.String())
 		}
 	})
 }

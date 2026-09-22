@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -260,3 +262,218 @@ func TestValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadFile(t *testing.T) {
+	t.Run("loads complete valid configuration", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "syscheck.json")
+		content := `{
+			"load_warn": 3.0,
+			"load_crit": 6.0,
+			"mem_warn": 75.0,
+			"mem_crit": 85.0,
+			"disk_warn": 70.0,
+			"disk_crit": 85.0,
+			"disk_path": "/var",
+			"format": "json",
+			"targets": ["node1", "node2"],
+			"procs": ["sshd", "cron"],
+			"services": ["dbus"],
+			"tcp": ["127.0.0.1:5432"],
+			"http": ["http://localhost:8080/health"]
+		}`
+		if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := config.LoadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if cfg.LoadWarn != 3.0 || cfg.LoadCrit != 6.0 {
+			t.Errorf("Load thresholds = (%.1f, %.1f), want (3.0, 6.0)", cfg.LoadWarn, cfg.LoadCrit)
+		}
+		if cfg.MemWarn != 75.0 || cfg.MemCrit != 85.0 {
+			t.Errorf("Mem thresholds = (%.1f, %.1f), want (75.0, 85.0)", cfg.MemWarn, cfg.MemCrit)
+		}
+		if cfg.DiskPath != "/var" || cfg.Format != "json" {
+			t.Errorf("DiskPath=%q, Format=%q", cfg.DiskPath, cfg.Format)
+		}
+		if !reflect.DeepEqual(cfg.Targets, []string{"node1", "node2"}) {
+			t.Errorf("Targets = %v", cfg.Targets)
+		}
+		if !reflect.DeepEqual(cfg.Procs, []string{"sshd", "cron"}) {
+			t.Errorf("Procs = %v", cfg.Procs)
+		}
+		if !reflect.DeepEqual(cfg.Services, []string{"dbus"}) {
+			t.Errorf("Services = %v", cfg.Services)
+		}
+		if !reflect.DeepEqual(cfg.TCPTargets, []string{"127.0.0.1:5432"}) {
+			t.Errorf("TCPTargets = %v", cfg.TCPTargets)
+		}
+		if !reflect.DeepEqual(cfg.HTTPTargets, []string{"http://localhost:8080/health"}) {
+			t.Errorf("HTTPTargets = %v", cfg.HTTPTargets)
+		}
+		if cfg.ConfigFile != cfgPath {
+			t.Errorf("ConfigFile = %q, want %q", cfg.ConfigFile, cfgPath)
+		}
+	})
+
+	t.Run("loads partial configuration with defaults preserved", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "partial.json")
+		content := `{"load_warn": 1.5}`
+		if err := os.WriteFile(cfgPath, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		cfg, err := config.LoadFile(cfgPath)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if cfg.LoadWarn != 1.5 {
+			t.Errorf("LoadWarn = %.1f, want 1.5", cfg.LoadWarn)
+		}
+		defaults := config.DefaultConfig()
+		if cfg.LoadCrit != defaults.LoadCrit {
+			t.Errorf("LoadCrit = %.1f, want default %.1f", cfg.LoadCrit, defaults.LoadCrit)
+		}
+		if cfg.MemWarn != defaults.MemWarn {
+			t.Errorf("MemWarn = %.1f, want default %.1f", cfg.MemWarn, defaults.MemWarn)
+		}
+	})
+
+	t.Run("returns error on missing file", func(t *testing.T) {
+		_, err := config.LoadFile("/path/does/not/exist/cfg.json")
+		if err == nil {
+			t.Error("expected error on missing file, got nil")
+		}
+	})
+
+	t.Run("returns error on malformed JSON", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "bad.json")
+		_ = os.WriteFile(cfgPath, []byte(`{not-json}`), 0644)
+
+		_, err := config.LoadFile(cfgPath)
+		if err == nil {
+			t.Error("expected error on bad JSON, got nil")
+		}
+	})
+
+	t.Run("returns error on invalid threshold configuration", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "invalid.json")
+		_ = os.WriteFile(cfgPath, []byte(`{"load_warn": 10.0, "load_crit": 5.0}`), 0644)
+
+		_, err := config.LoadFile(cfgPath)
+		if err == nil {
+			t.Error("expected error on invalid thresholds, got nil")
+		}
+	})
+}
+
+func TestParseWithConfigFile(t *testing.T) {
+	t.Run("file configuration overrides defaults", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "file_override.json")
+		_ = os.WriteFile(cfgPath, []byte(`{
+			"load_warn": 3.5,
+			"load_crit": 7.0,
+			"targets": ["cfg-host-1", "cfg-host-2"]
+		}`), 0644)
+
+		var buf bytes.Buffer
+		cfg, err := config.Parse([]string{"-config", cfgPath}, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if cfg.LoadWarn != 3.5 || cfg.LoadCrit != 7.0 {
+			t.Errorf("Load = (%.1f, %.1f), want (3.5, 7.0)", cfg.LoadWarn, cfg.LoadCrit)
+		}
+		expectedTargets := []string{"cfg-host-1", "cfg-host-2"}
+		if !reflect.DeepEqual(cfg.Targets, expectedTargets) {
+			t.Errorf("Targets = %v, want %v", cfg.Targets, expectedTargets)
+		}
+		// Default should still apply for unspecified fields
+		if cfg.MemWarn != 80.0 {
+			t.Errorf("MemWarn = %.1f, want default 80.0", cfg.MemWarn)
+		}
+	})
+
+	t.Run("CLI flags override configuration file values", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "cli_precedence.json")
+		_ = os.WriteFile(cfgPath, []byte(`{
+			"load_warn": 3.5,
+			"load_crit": 7.0,
+			"mem_warn": 85.0
+		}`), 0644)
+
+		var buf bytes.Buffer
+		cfg, err := config.Parse([]string{
+			"-config", cfgPath,
+			"-load-warn", "4.0",
+		}, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// -load-warn was explicitly provided on CLI -> overrides file (4.0)
+		if cfg.LoadWarn != 4.0 {
+			t.Errorf("LoadWarn = %.1f, want CLI value 4.0", cfg.LoadWarn)
+		}
+		// -load-crit was NOT provided on CLI -> keeps file value (7.0)
+		if cfg.LoadCrit != 7.0 {
+			t.Errorf("LoadCrit = %.1f, want file value 7.0", cfg.LoadCrit)
+		}
+		// -mem-warn was NOT provided on CLI -> keeps file value (85.0)
+		if cfg.MemWarn != 85.0 {
+			t.Errorf("MemWarn = %.1f, want file value 85.0", cfg.MemWarn)
+		}
+	})
+
+	t.Run("CLI positional arguments override config file targets", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "targets.json")
+		_ = os.WriteFile(cfgPath, []byte(`{"targets": ["file-node-1", "file-node-2"]}`), 0644)
+
+		var buf bytes.Buffer
+		cfg, err := config.Parse([]string{
+			"-config", cfgPath,
+			"cli-node-1", "cli-node-2", "cli-node-3",
+		}, &buf)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		expected := []string{"cli-node-1", "cli-node-2", "cli-node-3"}
+		if !reflect.DeepEqual(cfg.Targets, expected) {
+			t.Errorf("Targets = %v, want %v", cfg.Targets, expected)
+		}
+	})
+
+	t.Run("returns error when specified config file does not exist", func(t *testing.T) {
+		var buf bytes.Buffer
+		_, err := config.Parse([]string{"-config", "/non/existent/file.json"}, &buf)
+		if err == nil {
+			t.Error("expected error on missing config file, got nil")
+		}
+	})
+
+	t.Run("returns error when config file contains invalid JSON", func(t *testing.T) {
+		tempDir := t.TempDir()
+		cfgPath := filepath.Join(tempDir, "bad.json")
+		_ = os.WriteFile(cfgPath, []byte(`{invalid-json`), 0644)
+
+		var buf bytes.Buffer
+		_, err := config.Parse([]string{"-config", cfgPath}, &buf)
+		if err == nil {
+			t.Error("expected error on bad JSON config file, got nil")
+		}
+	})
+}
+

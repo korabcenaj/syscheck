@@ -2,31 +2,32 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 )
 
 // Config holds runtime configuration options and threshold limits.
 type Config struct {
-	LoadWarn float64
-	LoadCrit float64
-
-	MemWarn float64
-	MemCrit float64
-
-	DiskWarn float64
-	DiskCrit float64
-	DiskPath    string
-	Format      string
-	Targets     []string
-	Procs       []string
-	Services    []string
-	TCPTargets  []string
-	HTTPTargets []string
+	LoadWarn    float64  `json:"load_warn"`
+	LoadCrit    float64  `json:"load_crit"`
+	MemWarn     float64  `json:"mem_warn"`
+	MemCrit     float64  `json:"mem_crit"`
+	DiskWarn    float64  `json:"disk_warn"`
+	DiskCrit    float64  `json:"disk_crit"`
+	DiskPath    string   `json:"disk_path"`
+	Format      string   `json:"format"`
+	Targets     []string `json:"targets"`
+	Procs       []string `json:"procs"`
+	Services    []string `json:"services"`
+	TCPTargets  []string `json:"tcp"`
+	HTTPTargets []string `json:"http"`
+	ConfigFile  string   `json:"-"`
 }
 
 // DefaultConfig returns production-safe default thresholds.
@@ -46,27 +47,130 @@ func DefaultConfig() Config {
 	}
 }
 
+// fileConfig mirrors Config using pointers to identify explicitly supplied JSON fields.
+type fileConfig struct {
+	LoadWarn    *float64 `json:"load_warn"`
+	LoadCrit    *float64 `json:"load_crit"`
+	MemWarn     *float64 `json:"mem_warn"`
+	MemCrit     *float64 `json:"mem_crit"`
+	DiskWarn    *float64 `json:"disk_warn"`
+	DiskCrit    *float64 `json:"disk_crit"`
+	DiskPath    *string  `json:"disk_path"`
+	Format      *string  `json:"format"`
+	Targets     []string `json:"targets"`
+	Procs       []string `json:"procs"`
+	Services    []string `json:"services"`
+	TCP         []string `json:"tcp"`
+	TCPTargets  []string `json:"tcp_targets"`
+	HTTP        []string `json:"http"`
+	HTTPTargets []string `json:"http_targets"`
+}
+
+func (fc fileConfig) applyTo(cfg *Config) {
+	if fc.LoadWarn != nil {
+		cfg.LoadWarn = *fc.LoadWarn
+	}
+	if fc.LoadCrit != nil {
+		cfg.LoadCrit = *fc.LoadCrit
+	}
+	if fc.MemWarn != nil {
+		cfg.MemWarn = *fc.MemWarn
+	}
+	if fc.MemCrit != nil {
+		cfg.MemCrit = *fc.MemCrit
+	}
+	if fc.DiskWarn != nil {
+		cfg.DiskWarn = *fc.DiskWarn
+	}
+	if fc.DiskCrit != nil {
+		cfg.DiskCrit = *fc.DiskCrit
+	}
+	if fc.DiskPath != nil {
+		cfg.DiskPath = *fc.DiskPath
+	}
+	if fc.Format != nil {
+		cfg.Format = *fc.Format
+	}
+	if len(fc.Targets) > 0 {
+		cfg.Targets = fc.Targets
+	}
+	if len(fc.Procs) > 0 {
+		cfg.Procs = fc.Procs
+	}
+	if len(fc.Services) > 0 {
+		cfg.Services = fc.Services
+	}
+	if len(fc.TCP) > 0 {
+		cfg.TCPTargets = fc.TCP
+	} else if len(fc.TCPTargets) > 0 {
+		cfg.TCPTargets = fc.TCPTargets
+	}
+	if len(fc.HTTP) > 0 {
+		cfg.HTTPTargets = fc.HTTP
+	} else if len(fc.HTTPTargets) > 0 {
+		cfg.HTTPTargets = fc.HTTPTargets
+	}
+}
+
+// LoadFile reads a JSON configuration file from disk and parses it into a Config.
+// Unspecified fields retain their DefaultConfig() values.
+func LoadFile(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("reading config file %q: %w", path, err)
+	}
+
+	cfg := DefaultConfig()
+	var fc fileConfig
+	if err := json.Unmarshal(data, &fc); err != nil {
+		return Config{}, fmt.Errorf("parsing config file %q: %w", path, err)
+	}
+
+	fc.applyTo(&cfg)
+	cfg.ConfigFile = path
+
+	if err := cfg.Validate(); err != nil {
+		return Config{}, fmt.Errorf("validating config file %q: %w", path, err)
+	}
+
+	return cfg, nil
+}
+
 // Parse parses CLI arguments from args using an isolated flag.FlagSet.
+// Precedence order: CLI flags > Configuration file > DefaultConfig().
 // The output writer receives usage and flag error text.
 func Parse(args []string, output io.Writer) (Config, error) {
+	defaults := DefaultConfig()
 	cfg := DefaultConfig()
 
 	fs := flag.NewFlagSet("syscheck", flag.ContinueOnError)
 	fs.SetOutput(output)
 
-	fs.Float64Var(&cfg.LoadWarn, "load-warn", cfg.LoadWarn, "1-minute load average warning threshold")
-	fs.Float64Var(&cfg.LoadCrit, "load-crit", cfg.LoadCrit, "1-minute load average critical threshold")
+	var (
+		configFlag   string
+		loadWarn     float64
+		loadCrit     float64
+		memWarn      float64
+		memCrit      float64
+		diskWarn     float64
+		diskCrit     float64
+		diskPath     string
+		format       string
+		procsFlag    string
+		servicesFlag string
+		tcpFlag      string
+		httpFlag     string
+	)
 
-	fs.Float64Var(&cfg.MemWarn, "mem-warn", cfg.MemWarn, "Memory percentage warning threshold (0-100)")
-	fs.Float64Var(&cfg.MemCrit, "mem-crit", cfg.MemCrit, "Memory percentage critical threshold (0-100)")
-
-	fs.Float64Var(&cfg.DiskWarn, "disk-warn", cfg.DiskWarn, "Disk percentage warning threshold (0-100)")
-	fs.Float64Var(&cfg.DiskCrit, "disk-crit", cfg.DiskCrit, "Disk percentage critical threshold (0-100)")
-
-	fs.StringVar(&cfg.DiskPath, "disk-path", cfg.DiskPath, "Filesystem path to monitor for disk space and inodes")
-	fs.StringVar(&cfg.Format, "format", cfg.Format, "Output format: 'text' (default) or 'json'")
-
-	var procsFlag, servicesFlag, tcpFlag, httpFlag string
+	fs.StringVar(&configFlag, "config", "", "Path to JSON configuration file")
+	fs.Float64Var(&loadWarn, "load-warn", defaults.LoadWarn, "1-minute load average warning threshold")
+	fs.Float64Var(&loadCrit, "load-crit", defaults.LoadCrit, "1-minute load average critical threshold")
+	fs.Float64Var(&memWarn, "mem-warn", defaults.MemWarn, "Memory percentage warning threshold (0-100)")
+	fs.Float64Var(&memCrit, "mem-crit", defaults.MemCrit, "Memory percentage critical threshold (0-100)")
+	fs.Float64Var(&diskWarn, "disk-warn", defaults.DiskWarn, "Disk percentage warning threshold (0-100)")
+	fs.Float64Var(&diskCrit, "disk-crit", defaults.DiskCrit, "Disk percentage critical threshold (0-100)")
+	fs.StringVar(&diskPath, "disk-path", defaults.DiskPath, "Filesystem path to monitor for disk space and inodes")
+	fs.StringVar(&format, "format", defaults.Format, "Output format: 'text' (default) or 'json'")
 	fs.StringVar(&procsFlag, "procs", "", "Comma-separated list of process names to monitor (e.g. 'sshd,cron')")
 	fs.StringVar(&servicesFlag, "services", "", "Comma-separated list of system services to monitor (e.g. 'sshd,docker')")
 	fs.StringVar(&tcpFlag, "tcp", "", "Comma-separated list of TCP targets to check in host:port format (e.g. '127.0.0.1:5432,localhost:80')")
@@ -76,42 +180,51 @@ func Parse(args []string, output io.Writer) (Config, error) {
 		return Config{}, err
 	}
 
-	if procsFlag != "" {
-		for _, p := range strings.Split(procsFlag, ",") {
-			trimmed := strings.TrimSpace(p)
-			if trimmed != "" {
-				cfg.Procs = append(cfg.Procs, trimmed)
-			}
+	// 1. If -config was provided, load file values over defaults
+	if configFlag != "" {
+		data, err := os.ReadFile(configFlag)
+		if err != nil {
+			return Config{}, fmt.Errorf("reading config file %q: %w", configFlag, err)
 		}
+		var fc fileConfig
+		if err := json.Unmarshal(data, &fc); err != nil {
+			return Config{}, fmt.Errorf("parsing config file %q: %w", configFlag, err)
+		}
+		fc.applyTo(&cfg)
+		cfg.ConfigFile = configFlag
 	}
 
-	if servicesFlag != "" {
-		for _, s := range strings.Split(servicesFlag, ",") {
-			trimmed := strings.TrimSpace(s)
-			if trimmed != "" {
-				cfg.Services = append(cfg.Services, trimmed)
-			}
+	// 2. Explicitly supplied CLI flags override config file and defaults
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "load-warn":
+			cfg.LoadWarn = loadWarn
+		case "load-crit":
+			cfg.LoadCrit = loadCrit
+		case "mem-warn":
+			cfg.MemWarn = memWarn
+		case "mem-crit":
+			cfg.MemCrit = memCrit
+		case "disk-warn":
+			cfg.DiskWarn = diskWarn
+		case "disk-crit":
+			cfg.DiskCrit = diskCrit
+		case "disk-path":
+			cfg.DiskPath = diskPath
+		case "format":
+			cfg.Format = format
+		case "procs":
+			cfg.Procs = splitComma(procsFlag)
+		case "services":
+			cfg.Services = splitComma(servicesFlag)
+		case "tcp":
+			cfg.TCPTargets = splitComma(tcpFlag)
+		case "http":
+			cfg.HTTPTargets = splitComma(httpFlag)
 		}
-	}
+	})
 
-	if tcpFlag != "" {
-		for _, t := range strings.Split(tcpFlag, ",") {
-			trimmed := strings.TrimSpace(t)
-			if trimmed != "" {
-				cfg.TCPTargets = append(cfg.TCPTargets, trimmed)
-			}
-		}
-	}
-
-	if httpFlag != "" {
-		for _, u := range strings.Split(httpFlag, ",") {
-			trimmed := strings.TrimSpace(u)
-			if trimmed != "" {
-				cfg.HTTPTargets = append(cfg.HTTPTargets, trimmed)
-			}
-		}
-	}
-
+	// 3. Explicit positional arguments override targets
 	if posArgs := fs.Args(); len(posArgs) > 0 {
 		cfg.Targets = posArgs
 	}
@@ -121,6 +234,17 @@ func Parse(args []string, output io.Writer) (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func splitComma(s string) []string {
+	var result []string
+	for _, p := range strings.Split(s, ",") {
+		trimmed := strings.TrimSpace(p)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }
 
 // Validate checks that the configuration values are logically sound.
